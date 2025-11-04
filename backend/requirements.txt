@@ -15,3 +15,17 @@ celery
 pydantic-settings
 pytesseract
 opencv-python-headless
+
+# Authentication & Security
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+email-validator
+
+# Notifications
+aiosmtplib
+httpx
+
+# Scheduled Jobs
+celery-beat
+croniter
