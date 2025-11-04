@@ -26,22 +26,27 @@ def get_drive_service():
     return build('drive', 'v3', credentials=credentials)
 
 def list_files_in_folder(folder_id: str) -> List[Dict]:
-    """List all files in a Google Drive folder."""
+    """List all files in a Google Drive folder (supports both regular folders and Shared Drives)."""
     service = get_drive_service()
 
     query = f"'{folder_id}' in parents and trashed = false"
+
+    # Enable Shared Drive (Team Drive) support
     results = service.files().list(
         q=query,
-        fields="files(id, name, mimeType, webViewLink)"
+        fields="files(id, name, mimeType, webViewLink)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True
     ).execute()
 
     return results.get('files', [])
 
 def download_file(file_id: str, file_name: str, destination_path: str = None) -> bytes:
-    """Download a file from Google Drive."""
+    """Download a file from Google Drive (supports both regular files and Shared Drive files)."""
     service = get_drive_service()
 
-    request = service.files().get_media(fileId=file_id)
+    # Enable Shared Drive support
+    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     file_content = io.BytesIO()
     downloader = MediaIoBaseDownload(file_content, request)
 

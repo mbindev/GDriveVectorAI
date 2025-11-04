@@ -40,6 +40,7 @@
 - ✅ Environment variable configuration
 - ✅ Docker Compose orchestration
 - ✅ Non-root containers
+- ✅ Google Shared Drive (Team Drive) support
 
 ---
 

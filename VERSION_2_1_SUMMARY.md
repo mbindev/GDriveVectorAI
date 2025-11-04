@@ -142,6 +142,7 @@ Your DriveVectorAI system has evolved from a basic document ingestion tool into 
 - [x] Non-root containers
 - [x] Database connection pooling
 - [x] Retry logic with exponential backoff
+- [x] Google Shared Drive (Team Drive) support
 
 **Status**: 100% Complete
 
