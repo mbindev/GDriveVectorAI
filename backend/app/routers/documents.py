@@ -84,3 +84,146 @@ async def get_document_logs(drive_file_id: str):
         return {"drive_file_id": drive_file_id, "logs": logs}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")
+
+@router.post("/{drive_file_id}/reprocess")
+async def reprocess_document(drive_file_id: str):
+    """Re-process a document (useful for failed documents)."""
+    try:
+        from app.services.vector_db_service import update_document_status
+        from app.tasks import process_and_embed_document
+
+        # Get document details
+        document = get_document_by_id(drive_file_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Reset status to pending
+        update_document_status(drive_file_id, 'pending', None)
+
+        # Re-queue the processing task
+        process_and_embed_document.delay(
+            drive_file_id=document['drive_file_id'],
+            file_name=document['file_name'],
+            mime_type=document['mime_type'],
+            drive_url=document['drive_url'] or '',
+            folder_id=document.get('folder_id'),
+            job_id=document.get('job_id')
+        )
+
+        return {
+            "message": "Document queued for re-processing",
+            "drive_file_id": drive_file_id,
+            "status": "pending"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reprocess document: {str(e)}")
+
+@router.post("/batch/reprocess")
+async def batch_reprocess_documents(drive_file_ids: List[str]):
+    """Re-process multiple documents."""
+    try:
+        from app.services.vector_db_service import update_document_status
+        from app.tasks import process_and_embed_document
+
+        results = {"queued": [], "not_found": [], "failed": []}
+
+        for drive_file_id in drive_file_ids:
+            try:
+                document = get_document_by_id(drive_file_id)
+                if not document:
+                    results["not_found"].append(drive_file_id)
+                    continue
+
+                # Reset status
+                update_document_status(drive_file_id, 'pending', None)
+
+                # Re-queue
+                process_and_embed_document.delay(
+                    drive_file_id=document['drive_file_id'],
+                    file_name=document['file_name'],
+                    mime_type=document['mime_type'],
+                    drive_url=document['drive_url'] or '',
+                    folder_id=document.get('folder_id'),
+                    job_id=document.get('job_id')
+                )
+
+                results["queued"].append(drive_file_id)
+            except Exception as e:
+                results["failed"].append({"drive_file_id": drive_file_id, "error": str(e)})
+
+        return {
+            "message": f"Queued {len(results['queued'])} documents for re-processing",
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch reprocess failed: {str(e)}")
+
+@router.post("/batch/delete")
+async def batch_delete_documents(drive_file_ids: List[str]):
+    """Delete multiple documents."""
+    try:
+        results = {"deleted": [], "not_found": [], "failed": []}
+
+        for drive_file_id in drive_file_ids:
+            try:
+                document = get_document_by_id(drive_file_id)
+                if not document:
+                    results["not_found"].append(drive_file_id)
+                    continue
+
+                delete_document(drive_file_id)
+                results["deleted"].append(drive_file_id)
+            except Exception as e:
+                results["failed"].append({"drive_file_id": drive_file_id, "error": str(e)})
+
+        return {
+            "message": f"Deleted {len(results['deleted'])} documents",
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch delete failed: {str(e)}")
+
+@router.get("/export")
+async def export_documents(
+    format: str = Query("json", regex="^(json|csv)$"),
+    status: Optional[str] = None,
+    folder_id: Optional[str] = None
+):
+    """Export documents metadata as JSON or CSV."""
+    try:
+        documents = get_all_documents(limit=10000, offset=0, status=status, folder_id=folder_id)
+
+        if format == "csv":
+            import csv
+            import io
+            from fastapi.responses import StreamingResponse
+
+            output = io.StringIO()
+            if documents:
+                writer = csv.DictWriter(output, fieldnames=documents[0].keys())
+                writer.writeheader()
+                writer.writerows(documents)
+
+            output.seek(0)
+            return StreamingResponse(
+                iter([output.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=documents_export.csv"}
+            )
+        else:
+            # JSON format
+            from fastapi.responses import JSONResponse
+            from datetime import datetime
+
+            # Convert datetime objects to strings
+            for doc in documents:
+                for key, value in doc.items():
+                    if isinstance(value, datetime):
+                        doc[key] = value.isoformat()
+
+            return JSONResponse(content={"documents": documents, "total": len(documents)})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
