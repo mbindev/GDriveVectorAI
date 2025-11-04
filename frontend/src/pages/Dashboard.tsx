@@ -1,9 +1,21 @@
 import React from 'react';
 import { Container, Typography, Tabs, Tab, Box } from '@mui/material';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import SettingsIcon from '@mui/icons-material/Settings';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import SearchIcon from '@mui/icons-material/Search';
+import ChatIcon from '@mui/icons-material/Chat';
+import DescriptionIcon from '@mui/icons-material/Description';
+import WorkIcon from '@mui/icons-material/Work';
+import FolderIcon from '@mui/icons-material/Folder';
+import StatisticsPage from './pages/StatisticsPage';
 import SettingsPage from './pages/SettingsPage';
 import IngestionPage from './pages/IngestionPage';
 import SearchPage from './pages/SearchPage';
 import ChatPage from './pages/ChatPage';
+import DocumentsPage from './pages/DocumentsPage';
+import JobsPage from './pages/JobsPage';
+import FoldersPage from './pages/FoldersPage';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -36,30 +48,55 @@ const Dashboard: React.FC = () => {
 
   return (
     <Container maxWidth="xl">
-      <Typography variant="h3" component="h1" gutterBottom sx={{ mt: 3 }}>
+      <Typography variant="h3" component="h1" gutterBottom sx={{ mt: 3, mb: 2 }}>
         DriveVectorAI Dashboard
       </Typography>
+      <Typography variant="body1" color="text.secondary" paragraph>
+        AI-powered document search and management for Google Drive
+      </Typography>
 
-      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs value={value} onChange={handleChange} aria-label="dashboard tabs">
-          <Tab label="Settings" />
-          <Tab label="Ingestion" />
-          <Tab label="Search" />
-          <Tab label="Chat" />
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tabs
+          value={value}
+          onChange={handleChange}
+          aria-label="dashboard tabs"
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab icon={<DashboardIcon />} label="Overview" iconPosition="start" />
+          <Tab icon={<FolderIcon />} label="Folders" iconPosition="start" />
+          <Tab icon={<CloudUploadIcon />} label="Ingestion" iconPosition="start" />
+          <Tab icon={<WorkIcon />} label="Jobs" iconPosition="start" />
+          <Tab icon={<DescriptionIcon />} label="Documents" iconPosition="start" />
+          <Tab icon={<SearchIcon />} label="Search" iconPosition="start" />
+          <Tab icon={<ChatIcon />} label="Chat" iconPosition="start" />
+          <Tab icon={<SettingsIcon />} label="Settings" iconPosition="start" />
         </Tabs>
       </Box>
 
       <TabPanel value={value} index={0}>
-        <SettingsPage />
+        <StatisticsPage />
       </TabPanel>
       <TabPanel value={value} index={1}>
-        <IngestionPage />
+        <FoldersPage />
       </TabPanel>
       <TabPanel value={value} index={2}>
-        <SearchPage />
+        <IngestionPage />
       </TabPanel>
       <TabPanel value={value} index={3}>
+        <JobsPage />
+      </TabPanel>
+      <TabPanel value={value} index={4}>
+        <DocumentsPage />
+      </TabPanel>
+      <TabPanel value={value} index={5}>
+        <SearchPage />
+      </TabPanel>
+      <TabPanel value={value} index={6}>
         <ChatPage />
+      </TabPanel>
+      <TabPanel value={value} index={7}>
+        <SettingsPage />
       </TabPanel>
     </Container>
   );
