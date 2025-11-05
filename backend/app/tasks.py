@@ -23,6 +23,23 @@ logger = logging.getLogger(__name__)
 # Initialize Celery
 app = Celery('tasks', broker=settings.redis_broker_url)
 
+# Celery Beat Schedule Configuration
+app.conf.beat_schedule = {
+    'sync-active-folders-every-hour': {
+        'task': 'app.tasks.sync_all_active_folders',
+        'schedule': 3600.0,  # Every hour
+    },
+    'cleanup-old-notifications-daily': {
+        'task': 'app.tasks.cleanup_old_notifications',
+        'schedule': 86400.0,  # Every 24 hours
+    },
+    'check-scheduled-jobs-every-minute': {
+        'task': 'app.tasks.process_scheduled_jobs',
+        'schedule': 60.0,  # Every minute
+    },
+}
+app.conf.timezone = 'UTC'
+
 def extract_text_from_pdf(content: bytes) -> str:
     """Extract text from PDF content."""
     pdf_file = io.BytesIO(content)
@@ -110,6 +127,16 @@ def process_and_embed_document(self, drive_file_id: str, file_name: str, mime_ty
         add_processing_log(drive_file_id, 'info', "Successfully completed processing", job_id)
         logger.info(f"Successfully processed and embedded document: {file_name}")
 
+        # Enrich document metadata with AI analysis (async, non-blocking)
+        try:
+            from app.services.enrichment_service import enrich_document_metadata
+            enrich_document_metadata(drive_file_id, text)
+            add_processing_log(drive_file_id, 'info', "Document metadata enriched", job_id)
+        except Exception as enrich_error:
+            # Don't fail the job if enrichment fails
+            logger.warning(f"Failed to enrich document {file_name}: {str(enrich_error)}")
+            add_processing_log(drive_file_id, 'warning', f"Enrichment failed: {str(enrich_error)}", job_id)
+
         # Update job progress
         if job_id:
             update_job_progress(job_id, processed_files=1)
@@ -178,3 +205,137 @@ def task_failure_handler(sender=None, task_id=None, exception=None, args=None,
                         kwargs=None, traceback=None, einfo=None, **extra):
     """Handler called when task fails."""
     logger.error(f"Task {sender.name} [{task_id}] failed with exception: {exception}")
+
+# ============================================================================
+# SCHEDULED TASKS
+# ============================================================================
+
+@app.task(name='app.tasks.sync_all_active_folders')
+def sync_all_active_folders():
+    """Automatically sync all active folders on schedule."""
+    from app.services.vector_db_service import get_all_folders
+    from app.services.drive_service import list_files_in_folder
+    from app.routers.ingest import start_ingestion_internal
+
+    try:
+        logger.info("Starting scheduled sync of all active folders")
+        folders = get_all_folders()
+        active_folders = [f for f in folders if f.get('is_active', True)]
+
+        synced_count = 0
+        for folder in active_folders:
+            try:
+                folder_id = folder['folder_id']
+                folder_name = folder['folder_name']
+
+                logger.info(f"Syncing folder: {folder_name} ({folder_id})")
+
+                # Check if folder has any new files
+                files = list_files_in_folder(folder_id)
+                if files:
+                    # Start ingestion for this folder
+                    job_id = start_ingestion_internal(folder_id)
+                    logger.info(f"Started sync job {job_id} for folder {folder_name}")
+                    synced_count += 1
+                else:
+                    logger.info(f"No new files in folder {folder_name}")
+
+            except Exception as e:
+                logger.error(f"Failed to sync folder {folder.get('folder_name', 'unknown')}: {str(e)}")
+                continue
+
+        logger.info(f"Scheduled sync completed: {synced_count} folders synced")
+        return {"synced_folders": synced_count, "total_active_folders": len(active_folders)}
+
+    except Exception as e:
+        logger.error(f"Scheduled sync failed: {str(e)}")
+        raise
+
+@app.task(name='app.tasks.cleanup_old_notifications')
+def cleanup_old_notifications():
+    """Clean up old read notifications (older than 30 days)."""
+    from app.main import get_db_connection
+    from datetime import datetime, timedelta
+
+    try:
+        logger.info("Starting cleanup of old notifications")
+        cutoff_date = datetime.utcnow() - timedelta(days=30)
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    DELETE FROM notifications
+                    WHERE is_read = true AND created_at < %s
+                    RETURNING id
+                """, (cutoff_date,))
+                deleted_count = len(cursor.fetchall())
+                conn.commit()
+
+        logger.info(f"Cleaned up {deleted_count} old notifications")
+        return {"deleted_notifications": deleted_count}
+
+    except Exception as e:
+        logger.error(f"Notification cleanup failed: {str(e)}")
+        raise
+
+@app.task(name='app.tasks.process_scheduled_jobs')
+def process_scheduled_jobs():
+    """Process scheduled jobs from the database."""
+    from app.main import get_db_connection
+    from datetime import datetime
+    import json
+
+    try:
+        logger.info("Checking for scheduled jobs to process")
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                # Find jobs that are due to run
+                cursor.execute("""
+                    SELECT id, job_type, folder_id, schedule_type, next_run_at, config
+                    FROM scheduled_jobs
+                    WHERE is_active = true
+                    AND next_run_at <= %s
+                    ORDER BY next_run_at
+                """, (datetime.utcnow(),))
+
+                jobs = cursor.fetchall()
+
+                for job in jobs:
+                    job_id, job_type, folder_id, schedule_type, next_run_at, config = job
+
+                    try:
+                        logger.info(f"Processing scheduled job {job_id}: {job_type}")
+
+                        # Execute the scheduled job based on type
+                        if job_type == 'folder_sync':
+                            from app.routers.ingest import start_ingestion_internal
+                            ingestion_job_id = start_ingestion_internal(folder_id)
+                            logger.info(f"Started ingestion job {ingestion_job_id} from scheduled job {job_id}")
+
+                        # Update last run and calculate next run
+                        cursor.execute("""
+                            UPDATE scheduled_jobs
+                            SET last_run_at = %s,
+                                next_run_at = calculate_next_run(%s, %s),
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (datetime.utcnow(), schedule_type, next_run_at, job_id))
+
+                    except Exception as e:
+                        logger.error(f"Failed to process scheduled job {job_id}: {str(e)}")
+                        # Mark job as failed but don't stop processing other jobs
+                        cursor.execute("""
+                            UPDATE scheduled_jobs
+                            SET updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (job_id,))
+
+                conn.commit()
+
+        logger.info(f"Processed {len(jobs)} scheduled jobs")
+        return {"processed_jobs": len(jobs)}
+
+    except Exception as e:
+        logger.error(f"Scheduled job processing failed: {str(e)}")
+        raise

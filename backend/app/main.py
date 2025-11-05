@@ -115,7 +115,7 @@ async def refresh_secrets():
         raise HTTPException(status_code=500, detail=str(e))
 
 # Import and include routers
-from app.routers import ingest, search, llm, settings, documents, jobs, folders, statistics, auth, notifications
+from app.routers import ingest, search, llm, settings, documents, jobs, folders, statistics, auth, notifications, scheduled_jobs, enrichment
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
@@ -127,3 +127,5 @@ app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(folders.router, prefix="/api/folders", tags=["folders"])
 app.include_router(statistics.router, prefix="/api/statistics", tags=["statistics"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
+app.include_router(scheduled_jobs.router, prefix="/api/scheduled-jobs", tags=["scheduled-jobs"])
+app.include_router(enrichment.router, prefix="/api/enrichment", tags=["enrichment"])

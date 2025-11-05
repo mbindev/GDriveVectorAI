@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
     FOREIGN KEY (folder_id) REFERENCES drive_folders(folder_id) ON DELETE SET NULL
 );
 
--- Create documents table with enhanced tracking
+-- Create documents table with enhanced tracking and metadata enrichment
 CREATE TABLE IF NOT EXISTS documents (
     id SERIAL PRIMARY KEY,
     drive_file_id TEXT UNIQUE NOT NULL,
@@ -41,9 +41,21 @@ CREATE TABLE IF NOT EXISTS documents (
     status TEXT DEFAULT 'pending', -- pending, processing, completed, failed
     error_message TEXT,
     job_id TEXT,
+    -- Metadata enrichment fields
+    ai_summary TEXT,
+    ai_keywords TEXT[],
+    ai_categories TEXT[],
+    custom_tags TEXT[],
+    language TEXT,
+    sentiment_score FLOAT,
+    reading_time_minutes INTEGER,
+    last_modified_drive TIMESTAMP,
+    file_size_bytes BIGINT,
+    -- Timestamps
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     processed_at TIMESTAMP,
+    enriched_at TIMESTAMP,
     FOREIGN KEY (folder_id) REFERENCES drive_folders(folder_id) ON DELETE SET NULL,
     FOREIGN KEY (job_id) REFERENCES ingestion_jobs(job_id) ON DELETE SET NULL
 );
@@ -69,6 +81,10 @@ CREATE INDEX IF NOT EXISTS documents_folder_id_idx ON documents(folder_id);
 CREATE INDEX IF NOT EXISTS documents_status_idx ON documents(status);
 CREATE INDEX IF NOT EXISTS documents_job_id_idx ON documents(job_id);
 CREATE INDEX IF NOT EXISTS documents_created_at_idx ON documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS documents_language_idx ON documents(language);
+CREATE INDEX IF NOT EXISTS documents_ai_keywords_idx ON documents USING GIN(ai_keywords);
+CREATE INDEX IF NOT EXISTS documents_ai_categories_idx ON documents USING GIN(ai_categories);
+CREATE INDEX IF NOT EXISTS documents_custom_tags_idx ON documents USING GIN(custom_tags);
 
 CREATE INDEX IF NOT EXISTS ingestion_jobs_status_idx ON ingestion_jobs(status);
 CREATE INDEX IF NOT EXISTS ingestion_jobs_folder_id_idx ON ingestion_jobs(folder_id);

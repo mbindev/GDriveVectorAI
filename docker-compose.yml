@@ -114,6 +114,38 @@ services:
       retries: 3
       start_period: 40s
 
+  celery_beat:
+    build: ./backend
+    container_name: drivevectorai_celery_beat
+    restart: unless-stopped
+    environment:
+      # Google Cloud Configuration
+      GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID:?Google Project ID required}
+      SECRET_MANAGER_DB_SECRET_ID: ${SECRET_MANAGER_DB_SECRET_ID}
+      DRIVE_FOLDER_ID: ${DRIVE_FOLDER_ID}
+      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME}
+      # Redis Configuration
+      REDIS_BROKER_URL: ${REDIS_BROKER_URL:-redis://redis:6379/0}
+      # Database Configuration
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-drivevectorai}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?Database password required}
+    command: celery -A app.tasks beat --loglevel=info
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - backend_data:/app/data
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/app/credentials.json:ro
+    networks:
+      - drivevectorai_network
+
   frontend:
     build:
       context: ./frontend

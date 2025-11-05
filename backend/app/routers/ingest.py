@@ -17,45 +17,54 @@ class IngestRequest(BaseModel):
     folder_name: Optional[str] = None
     description: Optional[str] = None
 
+def start_ingestion_internal(folder_id: str, folder_name: Optional[str] = None, description: Optional[str] = None) -> str:
+    """Internal function to start ingestion (used by API and scheduled tasks)."""
+    # List files from Google Drive
+    files = list_files_in_folder(folder_id)
+
+    if not files:
+        raise ValueError("No files found in the specified folder")
+
+    # Create or update folder record
+    folder_name = folder_name or f"Folder {folder_id}"
+    create_or_update_folder(folder_id, folder_name, description)
+
+    # Create a job record
+    job_id = str(uuid.uuid4())
+    create_ingestion_job(job_id, folder_id, len(files))
+
+    # Create document records and enqueue processing tasks
+    for file_info in files:
+        # Create initial document record with pending status
+        create_document_record(
+            drive_file_id=file_info['id'],
+            file_name=file_info['name'],
+            mime_type=file_info['mimeType'],
+            drive_url=file_info.get('webViewLink', ''),
+            folder_id=folder_id,
+            job_id=job_id
+        )
+
+        # Enqueue Celery task for processing
+        process_and_embed_document.delay(
+            drive_file_id=file_info['id'],
+            file_name=file_info['name'],
+            mime_type=file_info['mimeType'],
+            drive_url=file_info.get('webViewLink', ''),
+            folder_id=folder_id,
+            job_id=job_id
+        )
+
+    return job_id
+
 @router.post("/start")
 async def start_ingestion(request: IngestRequest):
     """Start ingestion process for a Google Drive folder."""
     try:
-        # List files from Google Drive
+        job_id = start_ingestion_internal(request.folder_id, request.folder_name, request.description)
+
+        # Get file count for response
         files = list_files_in_folder(request.folder_id)
-
-        if not files:
-            raise HTTPException(status_code=404, detail="No files found in the specified folder")
-
-        # Create or update folder record
-        folder_name = request.folder_name or f"Folder {request.folder_id}"
-        create_or_update_folder(request.folder_id, folder_name, request.description)
-
-        # Create a job record
-        job_id = str(uuid.uuid4())
-        create_ingestion_job(job_id, request.folder_id, len(files))
-
-        # Create document records and enqueue processing tasks
-        for file_info in files:
-            # Create initial document record with pending status
-            create_document_record(
-                drive_file_id=file_info['id'],
-                file_name=file_info['name'],
-                mime_type=file_info['mimeType'],
-                drive_url=file_info.get('webViewLink', ''),
-                folder_id=request.folder_id,
-                job_id=job_id
-            )
-
-            # Enqueue Celery task for processing
-            process_and_embed_document.delay(
-                drive_file_id=file_info['id'],
-                file_name=file_info['name'],
-                mime_type=file_info['mimeType'],
-                drive_url=file_info.get('webViewLink', ''),
-                folder_id=request.folder_id,
-                job_id=job_id
-            )
 
         return {
             "message": f"Started ingestion of {len(files)} files",
