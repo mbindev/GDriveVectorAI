@@ -114,8 +114,14 @@ async def refresh_secrets():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Add rate limiting middleware (optional, can be enabled via env var)
+import os
+if os.getenv("ENABLE_RATE_LIMITING", "false").lower() == "true":
+    from app.middleware.rate_limiter import RateLimitMiddleware
+    app.add_middleware(RateLimitMiddleware)
+
 # Import and include routers
-from app.routers import ingest, search, llm, settings, documents, jobs, folders, statistics, auth, notifications, scheduled_jobs, enrichment
+from app.routers import ingest, search, llm, settings, documents, jobs, folders, statistics, auth, notifications, scheduled_jobs, enrichment, analytics, versions
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
@@ -129,3 +135,5 @@ app.include_router(statistics.router, prefix="/api/statistics", tags=["statistic
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(scheduled_jobs.router, prefix="/api/scheduled-jobs", tags=["scheduled-jobs"])
 app.include_router(enrichment.router, prefix="/api/enrichment", tags=["enrichment"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(versions.router, prefix="/api/versions", tags=["versions"])

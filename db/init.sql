@@ -168,6 +168,53 @@ CREATE TABLE IF NOT EXISTS webhook_configs (
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
+-- Create search_history table for analytics
+CREATE TABLE IF NOT EXISTS search_history (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER,
+    query_text TEXT NOT NULL,
+    search_type TEXT NOT NULL, -- 'vector', 'metadata', 'chat'
+    results_count INTEGER DEFAULT 0,
+    response_time_ms INTEGER,
+    filters JSONB, -- store search filters
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Create api_usage_logs table for rate limiting
+CREATE TABLE IF NOT EXISTS api_usage_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER,
+    api_key TEXT,
+    endpoint TEXT NOT NULL,
+    method TEXT NOT NULL,
+    status_code INTEGER,
+    response_time_ms INTEGER,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Create document_versions table
+CREATE TABLE IF NOT EXISTS document_versions (
+    id SERIAL PRIMARY KEY,
+    drive_file_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL,
+    file_name TEXT,
+    file_size_bytes BIGINT,
+    last_modified_drive TIMESTAMP,
+    checksum TEXT, -- MD5 or SHA256 hash
+    changes_summary TEXT,
+    changed_by INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (drive_file_id) REFERENCES documents(drive_file_id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE (drive_file_id, version_number)
+);
+
 -- Add user_id to existing tables
 ALTER TABLE drive_folders ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE ingestion_jobs ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
@@ -183,6 +230,14 @@ CREATE INDEX IF NOT EXISTS notifications_is_read_idx ON notifications(is_read);
 CREATE INDEX IF NOT EXISTS notifications_created_at_idx ON notifications(created_at DESC);
 CREATE INDEX IF NOT EXISTS scheduled_jobs_next_run_idx ON scheduled_jobs(next_run);
 CREATE INDEX IF NOT EXISTS scheduled_jobs_is_active_idx ON scheduled_jobs(is_active);
+CREATE INDEX IF NOT EXISTS search_history_user_id_idx ON search_history(user_id);
+CREATE INDEX IF NOT EXISTS search_history_created_at_idx ON search_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS search_history_search_type_idx ON search_history(search_type);
+CREATE INDEX IF NOT EXISTS api_usage_logs_user_id_idx ON api_usage_logs(user_id);
+CREATE INDEX IF NOT EXISTS api_usage_logs_endpoint_idx ON api_usage_logs(endpoint);
+CREATE INDEX IF NOT EXISTS api_usage_logs_created_at_idx ON api_usage_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS document_versions_drive_file_id_idx ON document_versions(drive_file_id);
+CREATE INDEX IF NOT EXISTS document_versions_created_at_idx ON document_versions(created_at DESC);
 
 -- Create updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
