@@ -121,7 +121,9 @@ if os.getenv("ENABLE_RATE_LIMITING", "false").lower() == "true":
     app.add_middleware(RateLimitMiddleware)
 
 # Import and include routers
-from app.routers import ingest, search, llm, settings, documents, jobs, folders, statistics, auth, notifications, scheduled_jobs, enrichment, analytics, versions
+from app.routers import (ingest, search, llm, settings, documents, jobs, folders, statistics, 
+                        auth, notifications, scheduled_jobs, enrichment, analytics, versions,
+                        brands, campaigns, tags)
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
@@ -137,3 +139,7 @@ app.include_router(scheduled_jobs.router, prefix="/api/scheduled-jobs", tags=["s
 app.include_router(enrichment.router, prefix="/api/enrichment", tags=["enrichment"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(versions.router, prefix="/api/versions", tags=["versions"])
+# V3.0 Organization routers
+app.include_router(brands.router, prefix="/api/brands", tags=["brands"])
+app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"])
+app.include_router(tags.router, prefix="/api/tags", tags=["tags"])

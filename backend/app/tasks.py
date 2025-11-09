@@ -70,9 +70,13 @@ def process_and_embed_document(self, drive_file_id: str, file_name: str, mime_ty
     try:
         logger.info(f"Processing document: {file_name} (Job: {job_id})")
 
+        # Detect resource type from MIME type
+        from app.utils.resource_detector import detect_resource_type
+        resource_type = detect_resource_type(mime_type)
+
         # Update status to processing
         update_document_status(drive_file_id, 'processing')
-        add_processing_log(drive_file_id, 'info', f"Started processing {file_name}", job_id)
+        add_processing_log(drive_file_id, 'info', f"Started processing {file_name} (type: {resource_type})", job_id)
 
         # Download the file
         content = download_file(drive_file_id, file_name)
@@ -121,7 +125,8 @@ def process_and_embed_document(self, drive_file_id: str, file_name: str, mime_ty
             embedding=embedding,
             folder_id=folder_id,
             job_id=job_id,
-            full_text_length=full_text_length
+            full_text_length=full_text_length,
+            resource_type=resource_type
         )
 
         add_processing_log(drive_file_id, 'info', "Successfully completed processing", job_id)

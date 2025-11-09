@@ -16,15 +16,15 @@ def init_db():
 def insert_document(drive_file_id: str, file_name: str, mime_type: str,
                    drive_url: str, text_snippet: str, embedding: List[float],
                    folder_id: Optional[str] = None, job_id: Optional[str] = None,
-                   full_text_length: int = 0):
+                   full_text_length: int = 0, resource_type: str = 'unknown'):
     """Insert a document with its embedding into the database."""
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
                 INSERT INTO documents (drive_file_id, file_name, mime_type, drive_url,
                                      extracted_text_snippet, embedding, folder_id, job_id,
-                                     full_text_length, status, processed_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'completed', NOW())
+                                     full_text_length, resource_type, status, processed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'completed', NOW())
                 ON CONFLICT (drive_file_id) DO UPDATE SET
                     file_name = EXCLUDED.file_name,
                     mime_type = EXCLUDED.mime_type,
@@ -34,11 +34,12 @@ def insert_document(drive_file_id: str, file_name: str, mime_type: str,
                     folder_id = EXCLUDED.folder_id,
                     job_id = EXCLUDED.job_id,
                     full_text_length = EXCLUDED.full_text_length,
+                    resource_type = EXCLUDED.resource_type,
                     status = 'completed',
                     processed_at = NOW(),
                     updated_at = NOW();
             """, (drive_file_id, file_name, mime_type, drive_url, text_snippet, embedding,
-                  folder_id, job_id, full_text_length))
+                  folder_id, job_id, full_text_length, resource_type))
             conn.commit()
 
 def update_document_status(drive_file_id: str, status: str, error_message: Optional[str] = None):
