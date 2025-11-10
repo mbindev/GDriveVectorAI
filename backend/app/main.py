@@ -123,7 +123,7 @@ if os.getenv("ENABLE_RATE_LIMITING", "false").lower() == "true":
 # Import and include routers
 from app.routers import (ingest, search, llm, settings, documents, jobs, folders, statistics, 
                         auth, notifications, scheduled_jobs, enrichment, analytics, versions,
-                        brands, campaigns, tags)
+                        brands, campaigns, tags, scanner)
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
@@ -143,3 +143,4 @@ app.include_router(versions.router, prefix="/api/versions", tags=["versions"])
 app.include_router(brands.router, prefix="/api/brands", tags=["brands"])
 app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"])
 app.include_router(tags.router, prefix="/api/tags", tags=["tags"])
+app.include_router(scanner.router, prefix="/api/scanner", tags=["scanner"])

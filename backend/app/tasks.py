@@ -37,6 +37,10 @@ app.conf.beat_schedule = {
         'task': 'app.tasks.process_scheduled_jobs',
         'schedule': 60.0,  # Every minute
     },
+    'continuous-scan-active-folders': {
+        'task': 'app.tasks.continuous_scan_all_folders',
+        'schedule': 43200.0,  # Every 12 hours
+    },
 }
 app.conf.timezone = 'UTC'
 
@@ -343,4 +347,70 @@ def process_scheduled_jobs():
 
     except Exception as e:
         logger.error(f"Scheduled job processing failed: {str(e)}")
+        raise
+
+@app.task
+def continuous_scan_all_folders():
+    """
+    Continuous scanning task - scans all active folders to detect new/changed files.
+    Runs automatically via Celery Beat schedule.
+    """
+    try:
+        from app.services.scanner_service import perform_full_scan
+        from app.services.vector_db_service import get_db_connection
+        
+        logger.info("Starting continuous scan of all active folders")
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get all active folders
+        cur.execute("""
+            SELECT folder_id, folder_name 
+            FROM drive_folders 
+            WHERE is_active = true
+            ORDER BY last_scan_at ASC NULLS FIRST
+        """)
+        
+        folders = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        scanned_count = 0
+        for folder_id, folder_name in folders:
+            try:
+                logger.info(f"Scanning folder: {folder_name} ({folder_id})")
+                result = perform_full_scan(folder_id)
+                scanned_count += 1
+                logger.info(f"Completed scan: {result.get('scanned_items', 0)} items")
+            except Exception as e:
+                logger.error(f"Failed to scan folder {folder_name}: {e}")
+                continue
+        
+        logger.info(f"Continuous scan complete: {scanned_count}/{len(folders)} folders scanned")
+        return {"folders_scanned": scanned_count, "total_folders": len(folders)}
+        
+    except Exception as e:
+        logger.error(f"Continuous scan task failed: {str(e)}")
+        raise
+
+
+@app.task
+def scan_specific_folder(folder_id: str):
+    """
+    Scan a specific folder (can be called manually or scheduled).
+    
+    Args:
+        folder_id: Google Drive folder ID to scan
+    """
+    try:
+        from app.services.scanner_service import perform_full_scan
+        
+        logger.info(f"Starting scan for folder: {folder_id}")
+        result = perform_full_scan(folder_id)
+        logger.info(f"Scan complete: {result}")
+        
+        return result
+    except Exception as e:
+        logger.error(f"Failed to scan folder {folder_id}: {str(e)}")
         raise
