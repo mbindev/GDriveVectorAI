@@ -27,5 +27,4 @@ aiosmtplib
 httpx
 
 # Scheduled Jobs
-celery-beat
 croniter
