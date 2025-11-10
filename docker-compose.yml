@@ -9,6 +9,7 @@ services:
       POSTGRES_DB: ${DB_NAME:-drivevectorai}
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Database password required}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
@@ -17,11 +18,11 @@ services:
     networks:
       - drivevectorai_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-drivevectorai}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-drivevectorai} && psql -U ${DB_USER:-postgres} -d ${DB_NAME:-drivevectorai} -c 'SELECT 1' >/dev/null 2>&1"]
       interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
 
   redis:
     image: redis:7-alpine
@@ -41,10 +42,10 @@ services:
     restart: unless-stopped
     environment:
       # Google Cloud Configuration
-      GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID:?Google Project ID required}
-      SECRET_MANAGER_DB_SECRET_ID: ${SECRET_MANAGER_DB_SECRET_ID}
-      DRIVE_FOLDER_ID: ${DRIVE_FOLDER_ID}
-      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME}
+      GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID:-}
+      SECRET_MANAGER_DB_SECRET_ID: ${SECRET_MANAGER_DB_SECRET_ID:-}
+      DRIVE_FOLDER_ID: ${DRIVE_FOLDER_ID:-}
+      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME:-}
       # Redis Configuration
       REDIS_BROKER_URL: ${REDIS_BROKER_URL:-redis://redis:6379/0}
       # Database Configuration (fallback for local development)
@@ -53,6 +54,12 @@ services:
       DB_NAME: ${DB_NAME:-drivevectorai}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:?Database password required}
+      # JWT Configuration
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      # OpenAI Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -62,6 +69,7 @@ services:
         condition: service_healthy
     volumes:
       - backend_data:/app/data
+      - backend_logs:/app/logs
       # Mount Google Cloud credentials if available (for local development)
       - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/app/credentials.json:ro
     networks:
@@ -69,20 +77,20 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
 
   celery_worker:
     build: ./backend
-    container_name: drivevectorai_celery
+    container_name: drivevectorai_celery_worker
     restart: unless-stopped
     environment:
       # Google Cloud Configuration
-      GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID:?Google Project ID required}
-      SECRET_MANAGER_DB_SECRET_ID: ${SECRET_MANAGER_DB_SECRET_ID}
-      DRIVE_FOLDER_ID: ${DRIVE_FOLDER_ID}
-      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME}
+      GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID:-}
+      SECRET_MANAGER_DB_SECRET_ID: ${SECRET_MANAGER_DB_SECRET_ID:-}
+      DRIVE_FOLDER_ID: ${DRIVE_FOLDER_ID:-}
+      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME:-}
       # Redis Configuration
       REDIS_BROKER_URL: ${REDIS_BROKER_URL:-redis://redis:6379/0}
       # Database Configuration (fallback for local development)
@@ -91,9 +99,14 @@ services:
       DB_NAME: ${DB_NAME:-drivevectorai}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:?Database password required}
+      # JWT Configuration
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      # OpenAI Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Celery Configuration
-      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-4}
-    command: celery -A app.tasks worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-4}
+      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
+    command: celery -A app.tasks worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-2} --without-gossip
     depends_on:
       db:
         condition: service_healthy
@@ -103,6 +116,7 @@ services:
         condition: service_healthy
     volumes:
       - backend_data:/app/data
+      - backend_logs:/app/logs
       # Mount Google Cloud credentials if available (for local development)
       - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/app/credentials.json:ro
     networks:
@@ -110,9 +124,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.tasks inspect ping || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
 
   celery_beat:
     build: ./backend
@@ -120,10 +134,10 @@ services:
     restart: unless-stopped
     environment:
       # Google Cloud Configuration
-      GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID:?Google Project ID required}
-      SECRET_MANAGER_DB_SECRET_ID: ${SECRET_MANAGER_DB_SECRET_ID}
-      DRIVE_FOLDER_ID: ${DRIVE_FOLDER_ID}
-      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME}
+      GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID:-}
+      SECRET_MANAGER_DB_SECRET_ID: ${SECRET_MANAGER_DB_SECRET_ID:-}
+      DRIVE_FOLDER_ID: ${DRIVE_FOLDER_ID:-}
+      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME:-}
       # Redis Configuration
       REDIS_BROKER_URL: ${REDIS_BROKER_URL:-redis://redis:6379/0}
       # Database Configuration
@@ -132,7 +146,12 @@ services:
       DB_NAME: ${DB_NAME:-drivevectorai}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:?Database password required}
-    command: celery -A app.tasks beat --loglevel=info
+      # JWT Configuration
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      # OpenAI Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    command: celery -A app.tasks beat --loglevel=info --pidfile=/tmp/celerybeat.pid
     depends_on:
       db:
         condition: service_healthy
@@ -142,6 +161,9 @@ services:
         condition: service_healthy
     volumes:
       - backend_data:/app/data
+      - backend_logs:/app/logs
+      - celerybeat_data:/tmp
+      # Mount Google Cloud credentials if available (for local development)
       - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/app/credentials.json:ro
     networks:
       - drivevectorai_network
@@ -171,6 +193,10 @@ volumes:
   db_data:
     driver: local
   backend_data:
+    driver: local
+  backend_logs:
+    driver: local
+  celerybeat_data:
     driver: local
 
 networks:
